@@ -8,7 +8,7 @@ import os
 from monai.networks.nets import resnet50, vit#, resnet18
 
 class TnTS2(nn.Module):
-    def __init__(self, cfg, n_locs_v=21, n_locs_a=29, n_lats=2):
+    def __init__(self, n_locs_v=21, n_locs_a=29, n_lats=2):
         super().__init__()
         self.n_locs_v, self.n_locs_a, self.n_lats = n_locs_v, n_locs_a, n_lats
         self.bb = resnet50(spatial_dims=3, n_input_channels=3) # outputs [B, 400]
