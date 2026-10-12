@@ -246,3 +246,7 @@ pre-ves-*/
 results_*/
 syn_data_recipe.json
 to_be_determined.json
+Resnet/
+ViT/
+TODO
+constants.py
