@@ -39,7 +39,7 @@ if __name__ == '__main__':
         #     syn = json.load(f)
         train.preprocess(include_bg=False, include_s1_pred=False, syn_samples=False, max_items=1 if EARLY_STOP_PATCHING else -1)
         train.save('tuning-train.json')
-    else: train = TopAneu_TnTs2_DS.load('tuning-train.json', train_transforms); train.s1_predictor = get_s1('/home/tue20260926/Models/TopAneu-26/Stage1/nnUNetTrainer_single_encoder_mixed__nnUNetPlans__3d_fullres', 'cuda')
+    else: train = TopAneu_TnTs2_DS.load('tuning-train.json', train_transforms)#; train.s1_predictor = get_s1('/home/tue20260926/Models/TopAneu-26/Stage1/nnUNetTrainer_single_encoder_mixed__nnUNetPlans__3d_fullres', 'cuda')
     train.wdir = 'tuning-train'
     
     if not os.path.exists('tuning-val.json'):

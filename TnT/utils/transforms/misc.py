@@ -176,7 +176,7 @@ class AdaNorm():
         self.ct_mean, self.ct_std = ct_mean, ct_std
         
     def __repr__(self):
-        return f"AdaNorm using mean/std  >  MR: {self.mr_mean}/{self.mr_std}  |  CT: {self.ct_mean}/{self.ct_std}"
+        return f"AdaNorm using mean/std  >  MR: per-case mean std  |  CT: {self.ct_mean}/{self.ct_std}"
 
     def __call__(self, dct):
         if dct['modality'] == 'CTA':
