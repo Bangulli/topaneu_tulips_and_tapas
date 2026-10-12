@@ -172,8 +172,7 @@ class MaybeResize():
         return f'Resize to {self.size} Voxels³'
     
 class AdaNorm():
-    def __init__(self, mr_mean, mr_std, ct_mean, ct_std):
-        self.mr_mean, self.mr_std = mr_mean, mr_std
+    def __init__(self, ct_mean, ct_std):
         self.ct_mean, self.ct_std = ct_mean, ct_std
         
     def __repr__(self):
@@ -183,7 +182,7 @@ class AdaNorm():
         if dct['modality'] == 'CTA':
             mean, std = self.ct_mean, self.ct_std
         elif dct['modality'] == 'MRA':
-            mean, std = self.mr_mean, self.mr_std
+            mean, std = dct['image'][0, :].mean(), dct['image'][0, :].std()
         else:
             raise ValueError('Unknown modality')
 
@@ -196,8 +195,8 @@ class AdaNorm():
     
     @staticmethod
     def make(clip=False):
-        if clip: return AdaNorm(105.64747174811804, 128.1358337638573, 63.98932940740848, 279.77159725605)
-        return AdaNorm(311.7783241351976, 226.50190118254997, -125.36350339401929, 647.2861290527815)
+        if clip: return AdaNorm(63.98932940740848, 279.77159725605)
+        return AdaNorm(-125.36350339401929, 647.2861290527815)
     
     @staticmethod
     def compute_mean_std(dataset):
