@@ -11,12 +11,13 @@ from TnT.pipeline.inference import InferencePipeline
 from TnT.evaluation.topaneu26 import TopAneu26LikeEvaluator
 
 class BasicTrainer():
-    def __init__(self, lr=1e-4, optim = Adam, sched = CosineAnnealingLR, device='cuda'):
+    def __init__(self, lr=1e-4, optim = Adam, sched = CosineAnnealingLR, device='cuda', prec='half'):
         self.lr = lr
         self.optim = optim
         self.sched = sched
         self.device = device
         self.wdir=None
+        self.prec = torch.float16 if prec=='half' else torch.float32
         
     def _save_train_cfg(self, model, train_dl, val_dl, epochs, early_stop, wdir, use_aneu_class_balancing):
         with open(wdir/'train_cfg.txt', 'w') as f:
@@ -42,6 +43,7 @@ class BasicTrainer():
             ac_weights = torch.tensor(cw.ANEURYSM).to(self.device)
         else:
             ac_weights = None
+        model.to(self.prec)
         model.to(self.device)
         self.optim = self.optim(model.parameters(), self.lr)
         self.sched = self.sched(self.optim, epochs)
@@ -53,19 +55,20 @@ class BasicTrainer():
             print(f'------------------- Epoch {e:{fmt}}/{epochs} -------------------')
             ## Training step
             model.train()
-            for batch in tqdm.tqdm(train_dl, desc='Training batches'):
-                self.optim.zero_grad()
-                if loss is None: l = model.loss(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'], batch['location_v'].to(self.device), batch['location_a'].to(self.device), batch['laterality'].to(self.device), weights=ac_weights)
-                else: 
-                    lat, loc_v, loc_a = model(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'])
-                    l = loss(lat, loc_v, loc_a, batch['location_v'].to(self.device), batch['location_a'].to(self.device), batch['laterality'].to(self.device))
-                l.backward()
-                self.optim.step()
-                loss_history.add_train(l)
+            with torch.autocast(self.device, self.prec):
+                for batch in tqdm.tqdm(train_dl, desc='Training batches'):
+                    self.optim.zero_grad()
+                    if loss is None: l = model.loss(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'], batch['location_v'].to(self.device), batch['location_a'].to(self.device), batch['laterality'].to(self.device), weights=ac_weights)
+                    else: 
+                        lat, loc_v, loc_a = model(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'])
+                        l = loss(lat, loc_v, loc_a, batch['location_v'].to(self.device), batch['location_a'].to(self.device), batch['laterality'].to(self.device))
+                    l.backward()
+                    self.optim.step()
+                    loss_history.add_train(l)
             
             ## Validation step
             model.eval()
-            with torch.no_grad():
+            with torch.no_grad(), torch.autocast(self.device, self.prec):
                 for batch in tqdm.tqdm(val_dl, desc='Validating batches'):
                     if loss is None: l = model.loss(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'], batch['location_v'].to(self.device), batch['location_a'].to(self.device), batch['laterality'].to(self.device), weights=ac_weights)
                     else: 
