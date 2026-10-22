@@ -1,7 +1,7 @@
 from torch.utils.data import DataLoader, Dataset
 from pathlib import Path
 import os, tqdm, SimpleITK as sitk, json, numpy as np, random, torch, copy
-from scipy.ndimage import label, binary_erosion, binary_dilation
+from scipy.ndimage import label, binary_erosion, binary_dilation, generate_binary_structure
 from pprint import pprint
 from TnT.model.stage1 import get_s1
 
@@ -281,7 +281,7 @@ class TopAneu_TnTs2_DS(Dataset):
             sample = self.image_ds[i]
             if not any(sample['location']): continue
             
-            cc, n = label(sample['location_mask'])
+            cc, n = label(sample['location_mask'], generate_binary_structure(3,3))
             
             vbb_coords = np.argwhere(sample['vessel_mask']).T # VBB = Vessel Bounding Box
             vbb_d = [int(np.min(vbb_coords[0])), int(np.max(vbb_coords[0]))]

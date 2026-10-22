@@ -5,7 +5,7 @@ from pathlib import Path
 import SimpleITK as sitk
 from pprint import pprint
 from typing import Union, List, Tuple, Literal
-from scipy.ndimage import label, binary_erosion
+from scipy.ndimage import label, binary_erosion, generate_binary_structure
 from scipy.spatial import cKDTree
 from collections import Counter
 import matplotlib.pyplot as plt 
@@ -219,7 +219,7 @@ class TopAneu26LikeEvaluator():
             
             ref_arr = sitk.GetArrayFromImage(ref)
             pred_arr = sitk.GetArrayFromImage(pred)
-            cc, n = label(ref_arr)
+            cc, n = label(ref_arr, generate_binary_structure(3,3))
             for i in range(1, n+1):
                 slc = cc==i
                 gt_v=np.median(ref_arr[slc])

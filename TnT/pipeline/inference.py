@@ -177,7 +177,7 @@ class CaseDL(TopAneu_TnTs2_DS):
         self.lmask = lmask
         self.modality = 'CTA' if 'ct' in modality.lower() else 'MRA'
         self.transforms = transforms
-        self.cc, self.n = label(self.lmask)
+        self.cc, self.n = label(self.lmask, structure=generate_binary_structure(3, 3))
         self.spacing = spacing
         self.patch_size_mm = patch_size_mm
         vbb_coords = np.argwhere(self.vmask).T # VBB = Vessel Bounding Box
