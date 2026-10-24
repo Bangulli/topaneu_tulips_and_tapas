@@ -44,10 +44,10 @@ class LossHistory():
         return e, v
     
     def fin_epoch(self):
-        self.train_loss.append(sum(self.cur_train)/len(self.cur_train))
-        self.cur_train = []
-        self.val_loss.append(sum(self.cur_val)/len(self.cur_val))
-        self.cur_val = []
+        self.train_loss.append(self.cur_train)
+        self.cur_train = 0
+        self.val_loss.append(self.cur_val)
+        self.cur_val = 0
         
     def plot_progress(self, wdir):
         plt.plot(self.train_loss, label='training loss')
