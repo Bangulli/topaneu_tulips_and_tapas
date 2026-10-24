@@ -47,7 +47,7 @@ class BasicTrainer():
         model.to(self.device)
         self.optim = self.optim(model.parameters(), self.lr)
         self.sched = self.sched(self.optim, epochs)
-        loss_history = LossHistory()
+        loss_history = LossHistory(len(train_dl), len(val_dl))
         
         fmt = f"0{len(str(epochs))}d"
 

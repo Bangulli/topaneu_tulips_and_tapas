@@ -15,17 +15,19 @@ def loc_lat_cls_acc(gts, preds):
     return {'location acc': loc_acc, 'laterality acc': lat_acc, 'topaneu cls acc': cls_acc}
 
 class LossHistory():
-    def __init__(self):
+    def __init__(self, nsteps_tr, nsteps_vl):
         self.train_loss = []
         self.val_loss = []
-        self.cur_val = []
-        self.cur_train = []
+        self.cur_val = 0
+        self.cur_train = 0
+        self.nval = nsteps_vl
+        self.ntra = nsteps_tr
     
     def add_train(self, l):
-        self.cur_train.append(l.item())
+        self.cur_train += (l.item()/self.ntra)
         
     def add_val(self, l):
-        self.cur_val.append(l.item())
+        self.cur_val += (l.item()/self.nval)
         
     def has_converged(self, patience, tol=1e-4):
         if patience is None: return False
