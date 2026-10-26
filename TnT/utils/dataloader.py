@@ -63,11 +63,12 @@ class TopAneuDS(Dataset):
     
 class TopAneu_TnTs2_DS(Dataset):
     ########################### builtins
-    def __init__(self, source, transforms=None, cases=None, patch_size_mm=50, wdir=None, s1_path=None):
+    def __init__(self, source, transforms=None, cases=None, patch_size_mm=35, patch_size_vx=64 ,wdir=None, s1_path=None):
         self.image_ds = TopAneuDS(source, transforms=None, load_type_mask=False, cases=cases)
         self.aneus = []
         self.transforms = transforms
         self.patch_size_mm = patch_size_mm
+        self.patch_size_vx = patch_size_vx
         self.wdir = wdir
         self.s1_predictor = get_s1(s1_path) if s1_path is not None else None
         
@@ -155,6 +156,7 @@ class TopAneu_TnTs2_DS(Dataset):
     def _center_crop(self, img, coords, spacing, size_mm):
         sz_mm = round(size_mm/2)
         sz = [round(sz_mm/sp) for sp in spacing]
+        mx = max(sz)
         shape = img.shape
         
         coords_lower = []
@@ -164,24 +166,16 @@ class TopAneu_TnTs2_DS(Dataset):
             upper = c_ax+sz_ax
             lower = c_ax-sz_ax
             
-            if upper<=sh_ax and lower >=0:
-                coords_lower.append(lower)
-                coords_upper.append(upper)
-            elif upper > sh_ax:
-                diff = upper-sh_ax
-                coords_upper.append(sh_ax)
-                coords_lower.append(lower-diff)
-            elif lower < 0:
-                diff = lower
-                coords_lower.append(0)
-                coords_upper.append(upper+abs(diff))
+            coords_lower.append(lower+mx)
+            coords_upper.append(upper+mx)
         
+        img = np.pad(img, (mx, mx), 'constant', constant_values=0)
         crop = img[
             int(coords_lower[0]):int(coords_upper[0]),
             int(coords_lower[1]):int(coords_upper[1]),
             int(coords_lower[2]):int(coords_upper[2])
         ]            
-        return crop
+        return np.resize(crop, (self.patch_size_vx,self.patch_size_vx,self.patch_size_vx))
     
     def _center_mask_out(self, img, coords, spacing, size_mm):
         sz_mm = round(size_mm/2)
@@ -389,7 +383,8 @@ class TopAneu_TnTs2_DS(Dataset):
             'cases': self.image_ds.cases,
             'source': str(self.image_ds.src),
             'aneus': self.aneus,
-            'patch_size_mm': self.patch_size_mm
+            'patch_size_mm': self.patch_size_mm,
+            'patch_size_vx': self.patch_size_vx
         }
         path = str(path)+'.json' if not str(path).endswith('.json') else str(path)
         with open(path, 'w') as file:
@@ -408,6 +403,7 @@ class TopAneu_TnTs2_DS(Dataset):
         ds = TopAneu_TnTs2_DS(source=loaded['source'], transforms=transforms, cases=loaded['cases'])
         ds.aneus = loaded['aneus'] if loaded['aneus'] is not None else []
         ds.patch_size_mm = loaded['patch_size_mm']
+        ds.patch_size_vx = loaded['patch_size_vx']
         return ds
     
     @staticmethod
@@ -421,11 +417,12 @@ class TopAneu_TnTs2_DS(Dataset):
     
 class TopAneu_TnTs2_DS_for_vessel_pt(Dataset):
     ########################### builtins
-    def __init__(self, source, transforms=None, cases=None, patch_size_mm=50, wdir=None):
+    def __init__(self, source, transforms=None, cases=None, patch_size_mm=35, patch_size_vx=64, wdir=None):
         self.image_ds = TopAneuDS(source, transforms=None, load_type_mask=False, cases=cases)
         self.aneus = []
         self.transforms = transforms
         self.patch_size_mm = patch_size_mm
+        self.patch_size_vx = patch_size_vx
         self.wdir = wdir
         
     def __len__(self):
@@ -491,6 +488,7 @@ class TopAneu_TnTs2_DS_for_vessel_pt(Dataset):
     def _center_crop(self, img, coords, spacing, size_mm):
         sz_mm = round(size_mm/2)
         sz = [round(sz_mm/sp) for sp in spacing]
+        mx = max(sz)
         shape = img.shape
         
         coords_lower = []
@@ -500,21 +498,16 @@ class TopAneu_TnTs2_DS_for_vessel_pt(Dataset):
             upper = c_ax+sz_ax
             lower = c_ax-sz_ax
             
-            lower = max(lower, 0)
-            upper = min(upper, sh_ax)
-            
-            if upper - lower < min(2*sz_ax, sh_ax):
-                lower, upper = 0, sh_ax
-            
-            coords_lower.append(lower)
-            coords_upper.append(upper)
+            coords_lower.append(lower+mx)
+            coords_upper.append(upper+mx)
         
+        img = np.pad(img, (mx, mx), 'constant', constant_values=0)
         crop = img[
             int(coords_lower[0]):int(coords_upper[0]),
             int(coords_lower[1]):int(coords_upper[1]),
             int(coords_lower[2]):int(coords_upper[2])
         ]            
-        return crop
+        return np.resize(crop, (self.patch_size_vx,self.patch_size_vx,self.patch_size_vx))
     
     def _center_mask_out(self, img, coords, spacing, size_mm):
         sz_mm = round(size_mm/2)
@@ -647,7 +640,8 @@ class TopAneu_TnTs2_DS_for_vessel_pt(Dataset):
             'cases': self.image_ds.cases,
             'source': str(self.image_ds.src),
             'aneus': self.aneus,
-            'patch_size_mm': self.patch_size_mm
+            'patch_size_mm': self.patch_size_mm,
+            'patch_size_vx': self.patch_size_vx
         }
         path = str(path)+'.json' if not str(path).endswith('.json') else str(path)
         with open(path, 'w') as file:
@@ -661,6 +655,7 @@ class TopAneu_TnTs2_DS_for_vessel_pt(Dataset):
         ds = TopAneu_TnTs2_DS_for_vessel_pt(source=loaded['source'], transforms=transforms, cases=loaded['cases'])
         ds.aneus = loaded['aneus'] if loaded['aneus'] is not None else []
         ds.patch_size_mm = loaded['patch_size_mm']
+        ds.patch_size_vx = loaded['patch_size_vx']
         return ds
     ###########################
     
