@@ -11,13 +11,49 @@ from TnT.pipeline.inference import InferencePipeline
 from TnT.evaluation.topaneu26 import TopAneu26LikeEvaluator
 
 class BasicTrainer():
-    def __init__(self, lr=1e-4, optim = Adam, sched = CosineAnnealingLR, device='cuda', prec='half'):
+    def __init__(self, lr=1e-4, optim = Adam, sched = CosineAnnealingLR, device='cuda', prec='half', wandb_cfg=None):
         self.lr = lr
         self.optim = optim
         self.sched = sched
         self.device = device
         self.wdir=None
         self.prec = torch.float16 if prec=='half' else torch.float32
+        self.wandb_cfg = wandb_cfg # kwargs for wandb.init, e.g. {'project': 'TnT', 'group': 'modspec', 'tags': ['CT']}; None disables wandb
+        self.run = None
+        
+    def _init_wandb(self, model, train_dl, val_dl, epochs, early_stop, wdir, use_aneu_class_balancing, loss):
+        if self.wandb_cfg is None: return
+        import wandb
+        self.finish()
+        cfg = {
+            'model': type(model).__name__,
+            'model_parent': str(model.parent),
+            'epochs': epochs,
+            'early_stop': early_stop,
+            'lr': self.lr,
+            'optimizer': type(self.optim).__name__,
+            'scheduler': type(self.sched).__name__,
+            'loss': 'model.loss' if loss is None else type(loss).__name__,
+            'device': self.device,
+            'precision': str(self.prec),
+            'aneu_class_balancing': use_aneu_class_balancing,
+            'batch_size': train_dl.batch_size,
+            'n_train': len(train_dl.dataset),
+            'n_val': len(val_dl.dataset),
+            'train_transforms': str(train_dl.dataset.transforms),
+            'val_transforms': str(val_dl.dataset.transforms),
+            'wdir': str(wdir),
+        }
+        kwargs = {'name': str(wdir), 'dir': wdir, **self.wandb_cfg}
+        kwargs['config'] = {**cfg, **kwargs.get('config', {})}
+        self.run = wandb.init(**kwargs)
+        self.run.define_metric('epoch')
+        self.run.define_metric('epoch/*', step_metric='epoch')
+    
+    def finish(self):
+        if self.run is not None:
+            self.run.finish()
+            self.run = None
         
     def _save_train_cfg(self, model, train_dl, val_dl, epochs, early_stop, wdir, use_aneu_class_balancing):
         with open(wdir/'train_cfg.txt', 'w') as f:
@@ -47,6 +83,7 @@ class BasicTrainer():
         model.to(self.device)
         self.optim = self.optim(model.parameters(), self.lr)
         self.sched = self.sched(self.optim, epochs)
+        self._init_wandb(model, train_dl, val_dl, epochs, early_stop, wdir, use_aneu_class_balancing, loss)
         loss_history = LossHistory(len(train_dl), len(val_dl))
         
         fmt = f"0{len(str(epochs))}d"
@@ -65,6 +102,7 @@ class BasicTrainer():
                     l.backward()
                     self.optim.step()
                     loss_history.add_train(l)
+                    if self.run is not None: self.run.log({'batch/train_loss': l.item()})
             
             ## Validation step
             model.eval()
@@ -77,9 +115,12 @@ class BasicTrainer():
                     loss_history.add_val(l)
             
             ## scheduling
+            lr = self.sched.get_last_lr()[0]
             self.sched.step()
             loss_history.fin_epoch()
             loss_history.plot_progress(wdir)
+            if self.run is not None:
+                self.run.log({'epoch': e, 'epoch/train_loss': loss_history.train_loss[-1], 'epoch/val_loss': loss_history.val_loss[-1], 'epoch/lr': lr})
             
             ## saving
             model.save(wdir/f'latest_epoch', overwrite=True)
@@ -90,6 +131,7 @@ class BasicTrainer():
                 best_epoch, best_loss = loss_history.min()
                 with open(wdir/f'best_val_loss'/'note.txt', 'w') as f:
                     f.write(f'Convergence achieved after {best_epoch} epochs with validation loss {best_loss}')
+                if self.run is not None: self.run.summary.update({'best_epoch': best_epoch, 'best_val_loss': best_loss})
                 
             
             ## early stopping
@@ -102,6 +144,7 @@ class BasicTrainer():
             shutil.copytree(wdir/f'latest_epoch', wdir/f'best_val_loss', dirs_exist_ok=True)
             with open(wdir/f'best_val_loss'/'note.txt', 'w') as f:
                 f.write(f'No convergence achieved after {epochs} epochs. Best loss is {best_loss} at epoch {best_epoch}')
+            if self.run is not None: self.run.summary['converged'] = False
                 
         model.load(wdir/f'best_val_loss')
         return model
@@ -138,6 +181,7 @@ class BasicTrainer():
         print(f"Model achieved an accuracy of {acc}")
         with open(self.wdir/'acc.txt', 'w') as f:
             f.write(f"Model achieved an accuracy of {acc}")
+        if self.run is not None: self.run.summary.update({f'test_{target}/{k}': float(v) for k, v in acc.items()})
         return acc
     
     def test_TopAneu(self, model, testds, test_trans, s1, precomp):
@@ -153,6 +197,7 @@ class BasicTrainer():
         ev.re_eval_by_modality(res, outdir)
         with open(f'{outdir}/per_cls.json', 'w') as f:
             json.dump(avg, f, indent=4)
+        if self.run is not None: self.run.summary['topaneu_perfect'] = avg
         
         print('----------- With Stage 1 Segmentations ----------')
         pl = InferencePipeline(s1, model, 64, 35, use_tta=True)
@@ -166,3 +211,4 @@ class BasicTrainer():
         ev.re_eval_by_modality(res, outdir)
         with open(f'{outdir}/per_cls.json', 'w') as f:
             json.dump(avg, f, indent=4)
+        if self.run is not None: self.run.summary['topaneu_with_s1'] = avg

@@ -154,28 +154,31 @@ class TopAneu_TnTs2_DS(Dataset):
     ########################### 
     ########################### privates
     def _center_crop(self, img, coords, spacing, size_mm):
-        sz_mm = round(size_mm/2)
-        sz = [round(sz_mm/sp) for sp in spacing]
-        mx = max(sz)
-        shape = img.shape
-        
-        coords_lower = []
-        coords_upper = []
-        for c_ax, sh_ax, sz_ax in zip(coords, shape, sz):
-
-            upper = c_ax+sz_ax
-            lower = c_ax-sz_ax
+            sz_mm = round(size_mm/2)
+            sz = [round(sz_mm/sp) for sp in spacing]
+            mx = max(sz)
+            shape = img.shape
             
-            coords_lower.append(lower+mx)
-            coords_upper.append(upper+mx)
-        
-        img = np.pad(img, (mx, mx), 'constant', constant_values=0)
-        crop = img[
-            int(coords_lower[0]):int(coords_upper[0]),
-            int(coords_lower[1]):int(coords_upper[1]),
-            int(coords_lower[2]):int(coords_upper[2])
-        ]            
-        return np.resize(crop, (self.patch_size_vx,self.patch_size_vx,self.patch_size_vx))
+            coords_lower = []
+            coords_upper = []
+            for c_ax, sh_ax, sz_ax in zip(coords, shape, sz):
+    
+                upper = c_ax+sz_ax
+                lower = c_ax-sz_ax
+                
+                coords_lower.append(lower+mx)
+                coords_upper.append(upper+mx)
+            
+            img = np.pad(img, mx, 'constant', constant_values=0)
+            
+            crop = img[
+                int(coords_lower[0]):int(coords_upper[0]),
+                int(coords_lower[1]):int(coords_upper[1]),
+                int(coords_lower[2]):int(coords_upper[2])
+            ]  
+            res = np.resize(crop, (self.patch_size_vx,self.patch_size_vx,self.patch_size_vx))
+            
+            return res
     
     def _center_mask_out(self, img, coords, spacing, size_mm):
         sz_mm = round(size_mm/2)
@@ -501,13 +504,16 @@ class TopAneu_TnTs2_DS_for_vessel_pt(Dataset):
             coords_lower.append(lower+mx)
             coords_upper.append(upper+mx)
         
-        img = np.pad(img, (mx, mx), 'constant', constant_values=0)
+        img = np.pad(img, mx, 'constant', constant_values=0)
+        
         crop = img[
             int(coords_lower[0]):int(coords_upper[0]),
             int(coords_lower[1]):int(coords_upper[1]),
             int(coords_lower[2]):int(coords_upper[2])
-        ]            
-        return np.resize(crop, (self.patch_size_vx,self.patch_size_vx,self.patch_size_vx))
+        ]  
+        res = np.resize(crop, (self.patch_size_vx,self.patch_size_vx,self.patch_size_vx))
+        
+        return res
     
     def _center_mask_out(self, img, coords, spacing, size_mm):
         sz_mm = round(size_mm/2)

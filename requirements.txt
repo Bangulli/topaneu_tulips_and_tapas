@@ -12,3 +12,4 @@ scikit-learn
 accelerate
 nnunetv2
 batchgenerators
+wandb
