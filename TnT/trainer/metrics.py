@@ -18,16 +18,16 @@ class LossHistory():
     def __init__(self, nsteps_tr, nsteps_vl):
         self.train_loss = []
         self.val_loss = []
-        self.cur_val = 0
-        self.cur_train = 0
+        self.cur_val = []
+        self.cur_train = []
         self.nval = nsteps_vl
         self.ntra = nsteps_tr
     
     def add_train(self, l):
-        self.cur_train += (l.item()/self.ntra)
+        self.cur_train.append(l.item())
         
     def add_val(self, l):
-        self.cur_val += (l.item()/self.nval)
+        self.cur_val.append(l.item())
         
     def has_converged(self, patience, tol=1e-4):
         if patience is None: return False
@@ -44,10 +44,10 @@ class LossHistory():
         return e, v
     
     def fin_epoch(self):
-        self.train_loss.append(self.cur_train)
-        self.cur_train = 0
-        self.val_loss.append(self.cur_val)
-        self.cur_val = 0
+        self.train_loss.append(sum(self.cur_train)/len(self.cur_train))
+        self.cur_train = []
+        self.val_loss.append(sum(self.cur_val)/len(self.cur_val))
+        self.cur_val = []
         
     def plot_progress(self, wdir):
         plt.plot(self.train_loss, label='training loss')

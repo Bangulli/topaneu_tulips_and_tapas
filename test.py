@@ -127,6 +127,7 @@ if __name__ == '__main__':
     
     for i in tqdm(range(len(train)), desc="Caching train samples"):
         temp = train[i]
+        print(torch.isnan(temp['image']).any(), temp['image'].shape, temp['coords'])
     for i in tqdm(range(len(val)), desc="Caching val samples"):
         temp = val[i]
     
