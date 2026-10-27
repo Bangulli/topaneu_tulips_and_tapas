@@ -169,16 +169,14 @@ class TopAneu_TnTs2_DS(Dataset):
                 coords_lower.append(lower+mx)
                 coords_upper.append(upper+mx)
             
-            img = np.pad(img, mx, 'constant', constant_values=0)
+            img = np.pad(img, mx, 'reflect')
             
             crop = img[
                 int(coords_lower[0]):int(coords_upper[0]),
                 int(coords_lower[1]):int(coords_upper[1]),
                 int(coords_lower[2]):int(coords_upper[2])
             ]  
-            res = np.resize(crop, (self.patch_size_vx,self.patch_size_vx,self.patch_size_vx))
-            
-            return res
+            return crop
     
     def _center_mask_out(self, img, coords, spacing, size_mm):
         sz_mm = round(size_mm/2)
@@ -504,16 +502,14 @@ class TopAneu_TnTs2_DS_for_vessel_pt(Dataset):
             coords_lower.append(lower+mx)
             coords_upper.append(upper+mx)
         
-        img = np.pad(img, mx, 'constant', constant_values=0)
+        img = np.pad(img, mx, 'reflect')
         
         crop = img[
             int(coords_lower[0]):int(coords_upper[0]),
             int(coords_lower[1]):int(coords_upper[1]),
             int(coords_lower[2]):int(coords_upper[2])
         ]  
-        res = np.resize(crop, (self.patch_size_vx,self.patch_size_vx,self.patch_size_vx))
-        
-        return res
+        return crop
     
     def _center_mask_out(self, img, coords, spacing, size_mm):
         sz_mm = round(size_mm/2)
