@@ -23,14 +23,14 @@ class TnTS2(nn.Module):
             modalities = [modalities]
             patch = patch.unsqueeze(0)
             coords = coords.unsqueeze(0)
-
-        x = self.bb(patch)
-        modality_flag = torch.tensor([m == 'MRA' for m in modalities], dtype=torch.uint8, device=coords.device).unsqueeze(1)
-        x = torch.concat([x, coords, modality_flag], dim=-1)
-        lat = self.laterality(x)
-        loc_v = self.location_vessel(x)
-        
-        loc_a = self.location_aneu(torch.concat([x, loc_v.detach()], dim=-1))
+        with torch.autocast('cuda', torch.bfloat16):
+            x = self.bb(patch)
+            modality_flag = torch.tensor([m == 'MRA' for m in modalities], dtype=torch.uint8, device=coords.device).unsqueeze(1)
+            x = torch.concat([x, coords, modality_flag], dim=-1)
+            lat = self.laterality(x)
+            loc_v = self.location_vessel(x)
+            
+            loc_a = self.location_aneu(torch.concat([x, loc_v.detach()], dim=-1))
 
         if unbatched:
             lat = lat.squeeze(0)
@@ -117,14 +117,15 @@ class TnTS2_ViT(nn.Module):
             patch = patch.unsqueeze(0)
             coords = coords.unsqueeze(0)
 
-        x, _ = self.bb(patch)
-        x = torch.mean(x, dim=1)
-        modality_flag = torch.tensor([m == 'MRA' for m in modalities], dtype=torch.uint8, device=coords.device).unsqueeze(1)
-        x = torch.concat([x, coords, modality_flag], dim=-1)
-        lat = self.laterality(x)
-        loc_v = self.location_vessel(x)
-        
-        loc_a = self.location_aneu(torch.concat([x, loc_v.detach()], dim=-1))
+        with torch.autocast('cuda', torch.bfloat16):
+            x, _ = self.bb(patch)
+            x = torch.mean(x, dim=1)
+            modality_flag = torch.tensor([m == 'MRA' for m in modalities], dtype=torch.uint8, device=coords.device).unsqueeze(1)
+            x = torch.concat([x, coords, modality_flag], dim=-1)
+            lat = self.laterality(x)
+            loc_v = self.location_vessel(x)
+            
+            loc_a = self.location_aneu(torch.concat([x, loc_v.detach()], dim=-1))
 
         if unbatched:
             lat = lat.squeeze(0)
