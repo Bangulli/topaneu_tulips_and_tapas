@@ -159,7 +159,7 @@ class BasicTrainer():
         preds = []
         gts = []
         ids = []
-        with torch.no_grad(), torch.autocast(self.device, next(self.model.parameters()).dtype), torch.inference_mode():
+        with torch.no_grad(), torch.autocast(self.device, next(model.parameters()).dtype), torch.inference_mode():
             for batch in tqdm.tqdm(test_dl, desc='Testing batches'):
                 ids += batch['id']
                 pred_lat, pred_loc = model.classify(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'], target=target)
