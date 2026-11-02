@@ -159,14 +159,15 @@ class BasicTrainer():
         preds = []
         gts = []
         ids = []
-        for batch in tqdm.tqdm(test_dl, desc='Testing batches'):
-            ids += batch['id']
-            pred_lat, pred_loc = model.classify(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'], target=target)
-            pred_lat=pred_lat.detach().to('cpu')
-            pred_loc=pred_loc.detach().to('cpu')
-            preds.append(torch.concat([pred_loc, pred_lat], dim=-1))
-            if target == 'vessel': gts.append(torch.concat([batch['location_v'], batch['laterality']], dim=-1))
-            else:  gts.append(torch.concat([batch['location_a'], batch['laterality']], dim=-1))
+        with torch.no_grad(), torch.autocast(self.device, next(self.model.parameters()).dtype), torch.inference_mode():
+            for batch in tqdm.tqdm(test_dl, desc='Testing batches'):
+                ids += batch['id']
+                pred_lat, pred_loc = model.classify(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'], target=target)
+                pred_lat=pred_lat.detach().to('cpu')
+                pred_loc=pred_loc.detach().to('cpu')
+                preds.append(torch.concat([pred_loc, pred_lat], dim=-1))
+                if target == 'vessel': gts.append(torch.concat([batch['location_v'], batch['laterality']], dim=-1))
+                else:  gts.append(torch.concat([batch['location_a'], batch['laterality']], dim=-1))
         
         preds = torch.concat(preds, dim=0).to(torch.uint8) 
         preds_dec = decoder(preds)

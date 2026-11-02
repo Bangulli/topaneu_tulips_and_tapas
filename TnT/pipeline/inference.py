@@ -92,7 +92,8 @@ class InferencePipeline():
         
     
     def _stage2(self, smp: dict) -> int:
-        pred_lat, pred_loc = self.s2_model.classify(smp['image'].unsqueeze(0).to(self.device), smp['coords'].unsqueeze(0).to(self.device), [smp['modality']])
+        with torch.no_grad(), torch.autocast(self.device, next(self.s2_model.parameters()).dtype), torch.inference_mode():
+            pred_lat, pred_loc = self.s2_model.classify(smp['image'].unsqueeze(0).to(self.device), smp['coords'].unsqueeze(0).to(self.device), [smp['modality']])
         pred_lat=pred_lat.detach().to('cpu')
         pred_loc=pred_loc.detach().to('cpu')
         preds = torch.concat([pred_loc, pred_lat], dim=-1)
@@ -118,8 +119,8 @@ class InferencePipeline():
                     img = torch.flip(img, [dim+1]) # +1 to offset channel dim
                     crd[dim] = 1 - crd[dim]
                     if dim == 2: flip_lat = True
-                
-            pred_lat, _, pred_loc = self.s2_model.forward(img.unsqueeze(0).to(self.device), crd.unsqueeze(0).to(self.device), [smp['modality']])
+            with torch.no_grad(), torch.autocast(self.device, next(self.s2_model.parameters()).dtype), torch.inference_mode():
+                pred_lat, _, pred_loc = self.s2_model.forward(img.unsqueeze(0).to(self.device), crd.unsqueeze(0).to(self.device), [smp['modality']])
             pred_lat=pred_lat.detach().to('cpu')
             pred_loc=pred_loc.detach().to('cpu')
             if flip_lat: 
