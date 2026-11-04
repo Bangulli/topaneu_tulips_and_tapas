@@ -3,19 +3,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pathlib as pl
 import datetime
-import os
+import os, json
 
 from monai.networks.nets import resnet50, vit#, resnet18
 
 class TnTS2(nn.Module):
-    def __init__(self, n_locs_v=21, n_locs_a=29, n_lats=2):
+    def __init__(self, patchsize_mm, patchsize_vx):
         super().__init__()
-        self.n_locs_v, self.n_locs_a, self.n_lats = n_locs_v, n_locs_a, n_lats
+        self.n_locs_v, self.n_locs_a, self.n_lats = 21, 29, 2
         self.bb = resnet50(spatial_dims=3, n_input_channels=3) # outputs [B, 400]
         self.laterality = nn.Linear(404, self.n_lats)
         self.location_vessel = nn.Linear(404, self.n_locs_v)
         self.location_aneu = nn.Linear(404+self.n_locs_v, self.n_locs_a) # in pretraining is the vessel classes
         self.parent = None
+        self.patchsize_mm=patchsize_mm
+        self.patchsize_vx=patchsize_vx
         
     def forward(self, patch, coords, modalities):
         unbatched = isinstance(modalities, str)
@@ -67,6 +69,8 @@ class TnTS2(nn.Module):
         torch.save(self.location_vessel.state_dict(), pth/'vessel.pth')
         torch.save(self.location_aneu.state_dict(), pth/'aneu.pth')
         torch.save(self.laterality.state_dict(), pth/'laterality.pth')
+        with open(pth/'cfg.json', 'w') as f:
+            json.dump({'PATCH_SIZE_VX': self.patchsize_vx, 'PATCH_SIZE_MM': self.patchsize_mm}, f, indent=4)
         
     def load(self, pth):
         pth=pl.Path(pth)
@@ -75,16 +79,28 @@ class TnTS2(nn.Module):
         self.location_aneu.load_state_dict(torch.load(pth/'aneu.pth'))
         self.laterality.load_state_dict(torch.load(pth/'laterality.pth'))    
         self.parent=pth
+        with open(pth/'cfg.json', 'r') as f:
+            cfg = json.load(f)
+            self.patchsize_mm = cfg['PATCH_SIZE_MM']
+            self.patchsize_vx = cfg['PATCH_SIZE_VX']
     
     @staticmethod
     def from_pretrained(pth):
         pth = pl.Path(pth)
-        model = TnTS2()
+        model = TnTS2(*TnTS2.get_cfg_from_pretrained(pth))
         model.parent=pth
         model.bb.load_state_dict(torch.load(pth/'bb.pth'))
         model.location_vessel.load_state_dict(torch.load(pth/'location.pth'))
         model.laterality.load_state_dict(torch.load(pth/'laterality.pth'))
         return model
+    
+    @staticmethod
+    def get_cfg_from_pretrained(pth):
+        with open(pth/'cfg.json', 'r') as f:
+                    cfg = json.load(f)
+                    patchsize_mm = cfg['PATCH_SIZE_MM']
+                    patchsize_vx = cfg['PATCH_SIZE_VX']
+        return patchsize_mm, patchsize_vx
         
     def loss(self, patch, coords, modalities, targets_v, targets_a, targets_lat, weights):
         unbatched = isinstance(modalities, str)
@@ -101,14 +117,17 @@ class TnTS2(nn.Module):
         return loc_a_loss+loc_v_loss+lat_loss
     
 class TnTS2_ViT(nn.Module):
-    def __init__(self, n_locs_v=21, n_locs_a=29, n_lats=2, img_size=64, patch_size=8):
+    def __init__(self, patchsize_mm, patchsize_vx, vit_patch_size):
         super().__init__()
-        self.n_locs_v, self.n_locs_a, self.n_lats = n_locs_v, n_locs_a, n_lats
-        self.bb = vit.ViT(in_channels=3, img_size=(img_size,img_size,img_size), patch_size=(patch_size,patch_size,patch_size), dropout_rate=0.1) # outputs [B, 768]
+        self.n_locs_v, self.n_locs_a, self.n_lats = 21, 29, 2
+        self.bb = vit.ViT(in_channels=3, img_size=(patchsize_vx,patchsize_vx,patchsize_vx), patch_size=(vit_patch_size,vit_patch_size,vit_patch_size), dropout_rate=0.1) # outputs [B, 768]
         self.laterality = nn.Linear(772, self.n_lats)
         self.location_vessel = nn.Linear(772, self.n_locs_v)
         self.location_aneu = nn.Linear(772+self.n_locs_v, self.n_locs_a) # in pretraining is the vessel classes
         self.parent = None
+        self.patchsize_mm=patchsize_mm
+        self.patchsize_vx=patchsize_vx
+        self.vit_patchsize=vit_patch_size
         
     def forward(self, patch, coords, modalities):
         unbatched = isinstance(modalities, str)
@@ -161,6 +180,8 @@ class TnTS2_ViT(nn.Module):
         torch.save(self.location_vessel.state_dict(), pth/'vessel.pth')
         torch.save(self.location_aneu.state_dict(), pth/'aneu.pth')
         torch.save(self.laterality.state_dict(), pth/'laterality.pth')
+        with open(pth/'cfg.json', 'w') as f:
+                    json.dump({'PATCH_SIZE_VX': self.patchsize_vx, 'PATCH_SIZE_MM': self.patchsize_mm, 'PATCH_SIZE_VIT':self.vit_patchsize}, f, indent=4)
         
     def load(self, pth):
         pth=pl.Path(pth)
@@ -169,16 +190,32 @@ class TnTS2_ViT(nn.Module):
         self.location_aneu.load_state_dict(torch.load(pth/'aneu.pth'))
         self.laterality.load_state_dict(torch.load(pth/'laterality.pth'))    
         self.parent=pth
+        with open(pth/'cfg.json', 'r') as f:
+                    cfg = json.load(f)
+                    self.patchsize_mm = cfg['PATCH_SIZE_MM']
+                    self.patchsize_vx = cfg['PATCH_SIZE_VX']
+                    self.vit_patchsize = cfg['PATCH_SIZE_VIT']
     
     @staticmethod
     def from_pretrained(pth):
         pth = pl.Path(pth)
-        model = TnTS2()
+        model = TnTS2_ViT(*TnTS2_ViT.get_cfg_from_pretrained(pth))
         model.parent=pth
         model.bb.load_state_dict(torch.load(pth/'bb.pth'))
         model.location_vessel.load_state_dict(torch.load(pth/'location.pth'))
         model.laterality.load_state_dict(torch.load(pth/'laterality.pth'))
         return model
+    
+    @staticmethod
+    def get_cfg_from_pretrained(pth):
+        with open(pth/'cfg.json', 'r') as f:
+                    cfg = json.load(f)
+                    patchsize_mm = cfg['PATCH_SIZE_MM']
+                    patchsize_vx = cfg['PATCH_SIZE_VX']
+                    vit_patchsize = cfg['PATCH_SIZE_VIT']
+        return patchsize_mm, patchsize_vx, vit_patchsize
+    
+    
         
     def loss(self, patch, coords, modalities, targets_v, targets_a, targets_lat, weights):
         unbatched = isinstance(modalities, str)

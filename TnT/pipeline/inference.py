@@ -1,5 +1,4 @@
-from TnT.utils.transforms import get_inference_transforms, DecodeAneu
-from TnT.utils.dataloader import TopAneu_TnTs2_DS
+from TnT.utils.transforms import AdaNorm, DecodeAneu, Compose, MaybeToTensor, MaybeResize, ClipCtaIntensities, BinarizeVesselChannel, BinarizeAneuChannel
 from TnT.model.stage2 import TnTS2, TnTS2_ViT
 from TnT.model.stage1 import get_s1
 from TnT.model.modality_specific import TnTS2_Specific
@@ -8,12 +7,11 @@ from scipy.ndimage import label, generate_binary_structure
 from pathlib import Path
 import torch.nn.functional as F
 from pathlib import Path
+from TnT.utils.dataloader import TopAneu_TnTs2_DS
 
 class InferencePipeline():
-    def __init__(self, s1_model_path, s2_model_path, patch_size_vx=64, patch_size_mm=35, device='cuda', use_tta=False, transforms=None, use_mirroring=True):
+    def __init__(self, s1_model_path, s2_model_path, device='cuda', use_tta=False, use_mirroring=True):
         
-        self.patch_size_mm = patch_size_mm
-        self.s2_transforms = transforms
         self.decoder = DecodeAneu()
         self.device = device
         self.tta = use_tta
@@ -26,6 +24,15 @@ class InferencePipeline():
                 self.s2_model.to(self.device)
                 self.s2_model.eval()
             else: self.s2_model = self._make_s2(s2_model_path)
+            
+        self.s2_transforms = Compose([
+                    MaybeToTensor(),
+                    ClipCtaIntensities(),
+                    MaybeResize(size=self.s2_model.patchsize_vx),
+                    BinarizeVesselChannel(),
+                    BinarizeAneuChannel(),
+                    AdaNorm.make(True),
+            ])
 
     
     @torch.no_grad()  
@@ -49,7 +56,7 @@ class InferencePipeline():
         else: raise RuntimeError(f'unknown input type {type(sample)}')
         
         if np.any(lmask):
-            s2ds = CaseDL(image, vmask, lmask, modality, self.s2_transforms, spacing, self.patch_size_mm)
+            s2ds = CaseDL(image, vmask, lmask, modality, self.s2_transforms, spacing, self.s2_model.patchsize_mm)
             for i in range(len(s2ds)):
                 smp = s2ds[i]
                 if self.tta: pred = self._stage2_TTA(smp)
@@ -154,17 +161,18 @@ class InferencePipeline():
     
     def _make_s2(self, path):
         if isinstance(path, dict):
+            raise NotImplementedError('Modality specific inference is currently not supported')
             predictor = TnTS2_Specific(path['mr'], path['ct'])
             predictor.to(self.device)
             predictor.eval()
         elif isinstance(path, str) or isinstance(path, Path):
             try:
-                predictor = TnTS2()
+                predictor = TnTS2(*TnTS2.get_cfg_from_pretrained(path))
                 predictor.load(path)
                 predictor.to(self.device)
                 predictor.eval()
             except:
-                predictor = TnTS2_ViT()
+                predictor = TnTS2_ViT(*TnTS2_ViT.get_cfg_from_pretrained(path))
                 predictor.load(path)
                 predictor.to(self.device)
                 predictor.eval()
@@ -194,9 +202,9 @@ class CaseDL(TopAneu_TnTs2_DS):
         coords = np.mean(np.argwhere(self.cc==idx+1), axis=0).tolist()   
         multichannel_img = np.stack( # 4D array: [C, H, D, W]
             [
-                self._center_crop(self.image, coords, self.spacing, self.patch_size_mm),
-                self._center_crop(self.lmask, coords, self.spacing, self.patch_size_mm),
-                self._center_crop(self.vmask, coords, self.spacing, self.patch_size_mm)
+                self._center_crop(self.image, coords, self.spacing, self.patch_size_mm, False),
+                self._center_crop(self.lmask, coords, self.spacing, self.patch_size_mm, True),
+                self._center_crop(self.vmask, coords, self.spacing, self.patch_size_mm, True)
             ], axis=0
         )
         coords_in_vbb = [

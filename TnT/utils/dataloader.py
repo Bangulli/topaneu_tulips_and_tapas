@@ -95,9 +95,9 @@ class TopAneu_TnTs2_DS(Dataset):
             
             multichannel_img = np.stack( # 4D array: [C, H, D, W]
                 [
-                    self._center_crop(img_smp['image'], smp['coords'], img_smp['spacing'], self.patch_size_mm),
-                    self._center_crop(img_smp['location_mask'], smp['coords'], img_smp['spacing'], self.patch_size_mm),
-                    self._center_crop(img_smp['vessel_mask'], smp['coords'], img_smp['spacing'], self.patch_size_mm)
+                    self._center_crop(img_smp['image'], smp['coords'], img_smp['spacing'], self.patch_size_mm, False),
+                    self._center_crop(img_smp['location_mask'], smp['coords'], img_smp['spacing'], self.patch_size_mm, True),
+                    self._center_crop(img_smp['vessel_mask'], smp['coords'], img_smp['spacing'], self.patch_size_mm, True)
                 ], axis=0
             )
             
@@ -153,30 +153,12 @@ class TopAneu_TnTs2_DS(Dataset):
         return len(self.aneus)>0
     ########################### 
     ########################### privates
-    def _center_crop(self, img, coords, spacing, size_mm):
-            sz_mm = round(size_mm/2)
-            sz = [round(sz_mm/sp) for sp in spacing]
-            mx = max(sz)
-            shape = img.shape
-            
-            coords_lower = []
-            coords_upper = []
-            for c_ax, sh_ax, sz_ax in zip(coords, shape, sz):
-    
-                upper = c_ax+sz_ax
-                lower = c_ax-sz_ax
-                
-                coords_lower.append(lower+mx)
-                coords_upper.append(upper+mx)
-            
-            img = np.pad(img, mx, 'reflect')
-            
-            crop = img[
-                int(coords_lower[0]):int(coords_upper[0]),
-                int(coords_lower[1]):int(coords_upper[1]),
-                int(coords_lower[2]):int(coords_upper[2])
-            ]  
-            return crop
+    def _center_crop(self, img, coords, spacing, size_mm, is_mask=False):
+        half = [int(round(size_mm / 2 / s)) for s in spacing[::-1]]  # sitk (x,y,z) -> array (z,y,x)
+        c = [int(round(x)) for x in coords]
+        img = np.pad(img, [(h, h) for h in half], mode='constant' if is_mask else 'reflect')
+        return img[tuple(slice(ci, ci + 2 * h) for ci, h in zip(c, half))]
+
     
     def _center_mask_out(self, img, coords, spacing, size_mm):
         sz_mm = round(size_mm/2)
@@ -227,7 +209,7 @@ class TopAneu_TnTs2_DS(Dataset):
             vbb_w = [int(np.min(vbb_coords[2])), int(np.max(vbb_coords[2]))]
             
             smp = {
-                    'idx': i, # the base image idx in the base dataset
+                    'idx': cur_smp['idx'], # the base image idx in the base dataset
                     'coords': seed.tolist(), # the centroid
                     'location': 0,
                     'modality': img_smp['modality'],
@@ -243,7 +225,7 @@ class TopAneu_TnTs2_DS(Dataset):
             
     def _put_random_sphere_as_aneu(self, img, spacing):
         diameter_in_mm = random.choice(np.arange(2, 10.5, 0.25)) # generates a random aneurysm diameter in mms
-        diameter = max(spacing)*diameter_in_mm # converts into voxels bit lossy though since the spacing is non isometric, yielding basically an odd shape
+        diameter = diameter_in_mm/max(spacing) # converts into voxels bit lossy though since the spacing is non isometric, yielding basically an odd shape
         diameter = min(min(img.shape if len(img.shape)<4 else img.shape[1:]), round(diameter))
         diameter = max(diameter, 1)
         
@@ -446,9 +428,9 @@ class TopAneu_TnTs2_DS_for_vessel_pt(Dataset):
             
             multichannel_img = np.stack( # 4D array: [C, H, D, W]
                 [
-                    self._center_crop(img_smp['image'], smp['coords'], img_smp['spacing'], self.patch_size_mm),
-                    self._center_crop(img_smp['location_mask'], smp['coords'], img_smp['spacing'], self.patch_size_mm),
-                    self._center_crop(img_smp['vessel_mask'], smp['coords'], img_smp['spacing'], self.patch_size_mm)
+                    self._center_crop(img_smp['image'], smp['coords'], img_smp['spacing'], self.patch_size_mm, False),
+                    self._center_crop(img_smp['location_mask'], smp['coords'], img_smp['spacing'], self.patch_size_mm, True),
+                    self._center_crop(img_smp['vessel_mask'], smp['coords'], img_smp['spacing'], self.patch_size_mm, True)
                 ], axis=0
             )
             
@@ -486,30 +468,12 @@ class TopAneu_TnTs2_DS_for_vessel_pt(Dataset):
         return len(self.aneus)>0
     ########################### 
     ########################### privates
-    def _center_crop(self, img, coords, spacing, size_mm):
-        sz_mm = round(size_mm/2)
-        sz = [round(sz_mm/sp) for sp in spacing]
-        mx = max(sz)
-        shape = img.shape
-        
-        coords_lower = []
-        coords_upper = []
-        for c_ax, sh_ax, sz_ax in zip(coords, shape, sz):
+    def _center_crop(self, img, coords, spacing, size_mm, is_mask=False):
+        half = [int(round(size_mm / 2 / s)) for s in spacing[::-1]]  # sitk (x,y,z) -> array (z,y,x)
+        c = [int(round(x)) for x in coords]
+        img = np.pad(img, [(h, h) for h in half], mode='constant' if is_mask else 'reflect')
+        return img[tuple(slice(ci, ci + 2 * h) for ci, h in zip(c, half))]
 
-            upper = c_ax+sz_ax
-            lower = c_ax-sz_ax
-            
-            coords_lower.append(lower+mx)
-            coords_upper.append(upper+mx)
-        
-        img = np.pad(img, mx, 'reflect')
-        
-        crop = img[
-            int(coords_lower[0]):int(coords_upper[0]),
-            int(coords_lower[1]):int(coords_upper[1]),
-            int(coords_lower[2]):int(coords_upper[2])
-        ]  
-        return crop
     
     def _center_mask_out(self, img, coords, spacing, size_mm):
         sz_mm = round(size_mm/2)

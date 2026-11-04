@@ -41,7 +41,7 @@ if __name__ == '__main__':
         ## Prep trans
     transforms = Compose([
         LabelEncoder(),
-        MaybeToTensor(dtype=torch.float16),
+        MaybeToTensor(),
         ClipCtaIntensities(),
         BinarizeAneuChannel(),
         BinarizeVesselChannel(),
@@ -138,7 +138,7 @@ if __name__ == '__main__':
     
     ## setup objs
     trainer = BasicTrainer(lr=1e-3, prec="half")
-    model = TnTS2()
+    model = TnTS2(PATCH_SIZE_MM, PATCH_SIZE_VX)
     loss = TnTS2Loss(model.n_locs_v, model.n_locs_a)
     
     ## train or load

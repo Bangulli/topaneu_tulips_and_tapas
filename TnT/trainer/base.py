@@ -79,7 +79,6 @@ class BasicTrainer():
             ac_weights = torch.tensor(cw.ANEURYSM).to(self.device)
         else:
             ac_weights = None
-        model.to(self.prec)
         model.to(self.device)
         self.optim = self.optim(model.parameters(), self.lr)
         self.sched = self.sched(self.optim, epochs)
@@ -187,23 +186,23 @@ class BasicTrainer():
         if self.run is not None: self.run.summary.update({f'test_{target}/{k}': float(v) for k, v in acc.items()})
         return acc
     
-    def test_TopAneu(self, model, testds, test_trans, s1, precomp):
-        print('----------- With Perfect Segmentations ----------')
-        pl = InferencePipeline(None, model, 64, 35, use_tta=True, transforms=test_trans)
-        outdir = self.wdir/'eval'/'perfect'
-        ev = TopAneu26LikeEvaluator(pl, outdir, precomp_predictions=None)
-        res, agg, avg, disc = ev.eval_ds(testds)#ev.eval_list(test.src, test.cases)
-        with open(f'{outdir}/classification_failure.json', 'w') as f:
-                json.dump(disc, f, indent=4)
-        os.makedirs(outdir, exist_ok=True)
-        ev.plot(agg, f'{outdir}/per_cls')
-        ev.re_eval_by_modality(res, outdir)
-        with open(f'{outdir}/per_cls.json', 'w') as f:
-            json.dump(avg, f, indent=4)
-        if self.run is not None: self.run.summary['topaneu_perfect'] = avg
+    def test_TopAneu(self, model, testds, s1, precomp):
+        # print('----------- With Perfect Segmentations ----------')
+        # pl = InferencePipeline(None, model, sz_vx, sz_mm, use_tta=True, transforms=test_trans, use_mirroring=False)
+        # outdir = self.wdir/'eval'/'perfect'
+        # ev = TopAneu26LikeEvaluator(pl, outdir, precomp_predictions=None)
+        # res, agg, avg, disc = ev.eval_ds(testds)#ev.eval_list(test.src, test.cases)
+        # with open(f'{outdir}/classification_failure.json', 'w') as f:
+        #         json.dump(disc, f, indent=4)
+        # os.makedirs(outdir, exist_ok=True)
+        # ev.plot(agg, f'{outdir}/per_cls')
+        # ev.re_eval_by_modality(res, outdir)
+        # with open(f'{outdir}/per_cls.json', 'w') as f:
+        #     json.dump(avg, f, indent=4)
+        # if self.run is not None: self.run.summary['topaneu_perfect'] = avg
         
         print('----------- With Stage 1 Segmentations ----------')
-        pl = InferencePipeline(s1, model, 64, 35, use_tta=True)
+        pl = InferencePipeline(s1, model, use_tta=True, use_mirroring=False)
         outdir = self.wdir/'eval'/'with_s1'
         ev = TopAneu26LikeEvaluator(pl, outdir, precomp_predictions=precomp)
         res, agg, avg, disc = ev.eval_ds(testds)#ev.eval_list(test.src, test.cases)
