@@ -98,7 +98,7 @@ class BasicTrainer():
                     else: 
                         lat, loc_v, loc_a = model(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'])
                         l = loss(lat, loc_v, loc_a, batch['location_v'].to(self.device), batch['location_a'].to(self.device), batch['laterality'].to(self.device))
-                    assert not torch.isfinite(l), f"Loss in training batch {i} for epoch {e} is NaN, terminating. \n The corresponding loaded image batch may contain NaN: {torch.isnan(batch['image']).any()}"
+                    assert torch.isfinite(l), f"Loss in training batch {i} for epoch {e} is {l.item()}, terminating. \n The corresponding loaded image batch may contain NaN: {torch.isnan(batch['image']).any()}"
                     l.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     self.optim.step()
@@ -113,7 +113,7 @@ class BasicTrainer():
                     else: 
                         lat, loc_v, loc_a = model(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'])
                         l = loss(lat, loc_v, loc_a, batch['location_v'].to(self.device), batch['location_a'].to(self.device), batch['laterality'].to(self.device))
-                    assert not torch.isfinite(l), f"Loss in validation batch {i} for epoch {e} is NaN, terminating. \n The corresponding loaded image batch may contain NaN: {torch.isnan(batch['image']).any()}"
+                    assert torch.isfinite(l), f"Loss in validation batch {i} for epoch {e} is {l.item()}, terminating. \n The corresponding loaded image batch may contain NaN: {torch.isnan(batch['image']).any()}"
                     loss_history.add_val(l)
             
             ## scheduling
