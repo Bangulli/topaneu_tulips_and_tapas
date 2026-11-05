@@ -17,7 +17,7 @@ class BasicTrainer():
         self.sched = sched
         self.device = device
         self.wdir=None
-        self.prec = torch.float16 if prec=='half' else torch.float32
+        self.prec = torch.bfloat16 if prec=='half' else torch.float32
         self.wandb_cfg = wandb_cfg # kwargs for wandb.init, e.g. {'project': 'TnT', 'group': 'modspec', 'tags': ['CT']}; None disables wandb
         self.run = None
         
