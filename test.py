@@ -1,12 +1,14 @@
 from pprint import pprint
 from pathlib import Path
-import os, datetime, torch, shutil
-from tqdm import tqdm
-from TnT.utils.dataloader import TopAneu_TnTs2_DS, TnTs2_collate, DataLoader, TopAneu_TnTs2_DS_for_vessel_pt
-from TnT.utils.transforms import DropCoordinates, ClipCtaIntensities, RandomFlipLaterality, RandomDropCoordinates, LabelEncoder, NoisyCoordinates, DecodeAneu, DecodeVessel, Resample, RandomResample, RandomNonCorrespondingMask, RandomNonCorrespondingMorph, RandomMask, AdaNorm, Compose, MaybeToTensor, MaybeResize, BinarizeAneuChannel, BinarizeVesselChannel, ImageTransformWrapper
-from TnT.model.stage2 import TnTS2, TnTS2Loss, TnTS2_ViT
-from TnT.trainer.accelerated import AccelTrainer
+import os, datetime, torch, json, shutil, tqdm
+from TnT.utils.dataloader import TopAneu_TnTs2_DS, TnTs2_collate, DataLoader, TopAneuDS
+from TnT.utils.transforms import ClipCtaIntensities, RandomFlipLaterality, RandomDropCoordinates, LabelEncoder, NoisyCoordinates, DecodeAneu, DecodeVessel, Resample, RandomResample, RandomNonCorrespondingMask, RandomNonCorrespondingMorph, RandomMask, AdaNorm, Compose, MaybeToTensor, MaybeResize, BinarizeAneuChannel, BinarizeVesselChannel, ImageTransformWrapper
+from TnT.model.stage2 import TnTS2, TnTS2_ViT
+from TnT.model.stage1 import get_s1
 from TnT.trainer.base import BasicTrainer
+from TnT.trainer.n_fold import NFoldTrainer
+from TnT.pipeline.inference import InferencePipeline
+from TnT.evaluation.topaneu26 import TopAneu26LikeEvaluator
 from monai.transforms import (
     RandAffined,
     RandAffine,
@@ -24,40 +26,50 @@ from monai.transforms import (
 )
 
 if __name__ == '__main__':
-    PATCH_SIZE_VX = 128 # resizing in transforms
-    PATCH_SIZE_MM = 70 # extracting from image
-    PATCH_PER_VLOC = 8 # 4*36 = 144 samples per available image !! yields hella training samples
-    EARLY_STOP_PATCHING = 2
-    BATCH_SIZE = 6
+    PATCH_SIZE_VX = 64
+    PATCH_SIZE_MM= 35
+    BATCH_SIZE = 4
+    EARLY_STOP_PATCHING = False
+    pt_source = '/home/20260926/TnT/TnTS2_pretraining_from-12:53:24-27.10.26/best_val_loss'
+    s1_model = "/home/20260926/TnT/stage1_models/nnUNetTrainer_single_encoder_baseline__nnUNetPlans__3d_fullres"
     
-    # ## Do splits
-    # ds = TopAneu_TnTs2_DS("/home/20260926/datasets/TopAneu-26", patch_size_mm=PATCH_SIZE_MM)
-    # folds = ds.split('0.8-0.1-0.1', 42)
-    
-    # for id, fold in zip(['train', 'test', 'val'], folds):
-    #     fold.save(id)
-
     ## Prep trans
-        ## Prep trans
-    transforms = Compose([
+    val_transforms = Compose([
         LabelEncoder(),
         MaybeToTensor(),
         ClipCtaIntensities(),
+        MaybeResize(size=PATCH_SIZE_VX),
         BinarizeAneuChannel(),
         BinarizeVesselChannel(),
         AdaNorm.make(True),
     ])
-    
+    test_transforms = Compose([
+            MaybeToTensor(),
+            ClipCtaIntensities(),
+            MaybeResize(size=PATCH_SIZE_VX),
+            BinarizeAneuChannel(),
+            BinarizeVesselChannel(),
+            AdaNorm.make(True),
+        ])
     train_transforms = Compose([
         LabelEncoder(),
         MaybeToTensor(),
         ClipCtaIntensities(),
+        MaybeResize(PATCH_SIZE_VX),
         BinarizeAneuChannel(),
         BinarizeVesselChannel(),
         
         # ---- Spatial stuff ----
         RandomFlipLaterality(0.5),
-        NoisyCoordinates(0, 0.05, 0.05, 0.8),
+        
+        # ---- Coordinate stuff ----
+        # NoisyCoordinates(0, 0.05, 0.05, 0.8),
+        # RandomDropCoordinates(0.25),
+        
+        # # ---- Custom stuff ---- reduces perf
+        # RandomMask(0.2),
+        # RandomNonCorrespondingMask(0.2),
+        # RandomNonCorrespondingMorph(0.2),
 
         # ---- Intensity-only transforms: image channel exclusively ----
         ImageTransformWrapper(
@@ -91,67 +103,61 @@ if __name__ == '__main__':
         AdaNorm.make(True),
     ])
     
-    train_scratch = "pre-ves-train"
-    val_scratch = 'pre-ves-val'
+    train_scratch = 'tuning-train'
+    val_scratch = 'tuning-val'
         
     ####################################### Experiment 1: train+val for train, test for val, no test
     if os.path.exists(train_scratch): shutil.rmtree(train_scratch)
     if os.path.exists(val_scratch): shutil.rmtree(val_scratch)
-    
-    if not os.path.exists('pre-ves-val.json'):
-        val = TopAneu_TnTs2_DS_for_vessel_pt.load('val.json', transforms)
-        val.preprocess(patches_per_vloc=1, max_items=1 if EARLY_STOP_PATCHING else -1)
-        val.save('pre-ves-val.json')
-    else: val = TopAneu_TnTs2_DS_for_vessel_pt.load('pre-ves-val.json', transforms)
-    val.wdir = val_scratch
-        
-    if not os.path.exists('pre-ves-train.json'):
-        train = TopAneu_TnTs2_DS_for_vessel_pt.load('train.json', train_transforms)
-        train.preprocess(patches_per_vloc=PATCH_PER_VLOC, max_items=1 if EARLY_STOP_PATCHING else -1)
-        train.save('pre-ves-train.json')
-    else: train = TopAneu_TnTs2_DS_for_vessel_pt.load('pre-ves-train.json', train_transforms)
+    ## load splits
+    train = TopAneu_TnTs2_DS.load('train.json', train_transforms)
+    val = TopAneu_TnTs2_DS.load('val.json', train_transforms)
+    train = TopAneu_TnTs2_DS.join([train, val])
+    train.preprocess(include_bg=False, include_s1_pred=False, syn_samples=False, max_items=1 if EARLY_STOP_PATCHING else -1)
     train.wdir = train_scratch
+    # train.s1_predictor = get_s1(s1_model, 'cuda', use_mirroring=False)
     
-    if not os.path.exists('pre-ves-test.json'):
-        test = TopAneu_TnTs2_DS_for_vessel_pt.load('test.json', transforms)
-        test.preprocess(patches_per_vloc=1, max_items=1 if EARLY_STOP_PATCHING else -1)
-        test.save('pre-ves-test.json')
-    else: test = TopAneu_TnTs2_DS_for_vessel_pt.load('pre-ves-test.json', transforms)
+
+    val = TopAneu_TnTs2_DS.load('test.json', val_transforms)
+    val.preprocess(include_bg=False, include_s1_pred=False, syn_samples=False, max_items=1 if EARLY_STOP_PATCHING else -1)
+    val.wdir = val_scratch
     
-    train.patch_size_mm=PATCH_SIZE_MM
-    val.patch_size_mm=PATCH_SIZE_MM
-    test.patch_size_mm=PATCH_SIZE_MM
-    train.patch_size_vx=PATCH_SIZE_VX
-    val.patch_size_vx=PATCH_SIZE_VX
-    test.patch_size_vx=PATCH_SIZE_VX
-    
-    for i in tqdm(range(len(train)), desc="Caching train samples"):
+    for i in tqdm.tqdm(range(len(train)), desc="Caching train samples"):
         temp = train[i]
-        print(torch.isnan(temp['image']).any(), temp['image'].shape, temp['coords'])
-    for i in tqdm(range(len(val)), desc="Caching val samples"):
+    for i in tqdm.tqdm(range(len(val)), desc="Caching val samples"):
         temp = val[i]
+        
+    train.s1_predictor = None
+    val.s1_predictor = None
     
     ## PrEP DL
     train_dl = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True, collate_fn=TnTs2_collate, num_workers=6)
     val_dl = DataLoader(val, batch_size=BATCH_SIZE, shuffle=True, collate_fn=TnTs2_collate, num_workers=6)
-    test_dl = DataLoader(test, batch_size=BATCH_SIZE, shuffle=False, collate_fn=TnTs2_collate, num_workers=6)
     
     ## setup objs
-    trainer = BasicTrainer(lr=1e-3, prec="half")
+    trainer = BasicTrainer(lr=5e-6)
     model = TnTS2(PATCH_SIZE_MM, PATCH_SIZE_VX)
-    loss = TnTS2Loss(model.n_locs_v, model.n_locs_a)
     
     ## train or load
-    model = trainer.train(model, train_dl, val_dl, 200, 10, wdir=Path(datetime.datetime.now().strftime(r'TnTS2_pretraining_from-%H:%M:%S-%d.%m.%y')), loss=loss)
+    wdir = Path(datetime.datetime.now().strftime(r'TnTS2_tuning_from-%H:%M:%S-%d.%m.%y'))
+    model = trainer.train(model=model, train_dl=train_dl, val_dl=val_dl, epochs=1000, early_stop=100, use_aneu_class_balancing=False, wdir=wdir)#(model=model, ds=train, train_trans=train_transforms, val_trans=transforms, epochs=20, early_stop=5)
 
-    ## QnD test
-    # print('#'*20, 'Training ACC', '#'*20)
-    # train = TopAneu_TnTs2_DS_for_vessel_pt.load('pre-ves-train.json', transforms)
-    # train_dl = DataLoader(train, batch_size=4, shuffle=True)
-    # acc = trainer.test(model, train_dl, decoder=DecodeTargetForVessels())
-    # print('#'*20, 'Validation ACC', '#'*20)
-    # acc = trainer.test(model, val_dl, decoder=DecodeTargetForVessels())
-    # print('#'*20, 'Testing ACC for Aneu', '#'*20)
-    # acc = trainer.test(model, test_dl, decoder=DecodeAneu(), target='aneu')
-    print('#'*20, 'Testing ACC for Vessel', '#'*20)
-    acc = trainer.test(model, test_dl, decoder=DecodeVessel(), target='vessel')
+    ## E2E test
+    ## Prep pipeline
+    pl = InferencePipeline(s1_model, model, PATCH_SIZE_VX, PATCH_SIZE_MM, use_tta=True, use_mirroring=False, transforms=test_transforms)
+    
+    ## Prep data
+    test = TopAneuDS.load('test.json')
+    ## Prep evaluator
+    outdir = Path(wdir)/'validation_test'
+    os.makedirs(outdir, exist_ok=True)
+    
+    ev = TopAneu26LikeEvaluator(pl, outdir)
+    res, agg, avg, disc = ev.eval_list(test.src, test.cases)
+    with open(f'{outdir}/classification_failure.json', 'w') as f:
+            json.dump(disc, f, indent=4)
+    
+    ev.plot(agg, f'{outdir}/per_clas')
+    ev.re_eval_by_modality(res, outdir)
+    with open(f'{outdir}/per_cls.json', 'w') as f:
+        json.dump(avg, f, indent=4)

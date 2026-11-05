@@ -1,5 +1,5 @@
 from torch.optim import Adam
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, CosineAnnealingWarmRestarts
 from torch.nn.functional import cross_entropy, binary_cross_entropy, softmax
 from pathlib import Path
 import os, tqdm, torch, numpy as np, shutil, datetime, json
@@ -11,13 +11,13 @@ from TnT.pipeline.inference import InferencePipeline
 from TnT.evaluation.topaneu26 import TopAneu26LikeEvaluator
 
 class BasicTrainer():
-    def __init__(self, lr=1e-4, optim = Adam, sched = CosineAnnealingLR, device='cuda', prec='half', wandb_cfg=None):
+    def __init__(self, lr=1e-4, optim = Adam, sched = CosineAnnealingWarmRestarts, device='cuda', prec='half', wandb_cfg=None):
         self.lr = lr
         self.optim = optim
         self.sched = sched
         self.device = device
         self.wdir=None
-        self.prec = torch.bfloat16 if prec=='half' else torch.float32
+        self.prec = torch.float16 if prec=='half' else torch.float32
         self.wandb_cfg = wandb_cfg # kwargs for wandb.init, e.g. {'project': 'TnT', 'group': 'modspec', 'tags': ['CT']}; None disables wandb
         self.run = None
         
@@ -81,7 +81,7 @@ class BasicTrainer():
             ac_weights = None
         model.to(self.device)
         self.optim = self.optim(model.parameters(), self.lr)
-        self.sched = self.sched(self.optim, epochs)
+        self.sched = self.sched(self.optim, 10)
         self._init_wandb(model, train_dl, val_dl, epochs, early_stop, wdir, use_aneu_class_balancing, loss)
         loss_history = LossHistory(len(train_dl), len(val_dl))
         
@@ -98,8 +98,9 @@ class BasicTrainer():
                     else: 
                         lat, loc_v, loc_a = model(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'])
                         l = loss(lat, loc_v, loc_a, batch['location_v'].to(self.device), batch['location_a'].to(self.device), batch['laterality'].to(self.device))
-                    assert not torch.isnan(l), f"Loss in training batch {i} for epoch {e} is NaN, terminating. \n The corresponding loaded image batch may contain NaN: {torch.isnan(batch['image']).any()}"
+                    assert not torch.isfinite(l), f"Loss in training batch {i} for epoch {e} is NaN, terminating. \n The corresponding loaded image batch may contain NaN: {torch.isnan(batch['image']).any()}"
                     l.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     self.optim.step()
                     loss_history.add_train(l)
                     if self.run is not None: self.run.log({'batch/train_loss': l.item()})
@@ -112,7 +113,7 @@ class BasicTrainer():
                     else: 
                         lat, loc_v, loc_a = model(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'])
                         l = loss(lat, loc_v, loc_a, batch['location_v'].to(self.device), batch['location_a'].to(self.device), batch['laterality'].to(self.device))
-                    assert not torch.isnan(l), f"Loss in validation batch {i} for epoch {e} is NaN, terminating. \n The corresponding loaded image batch may contain NaN: {torch.isnan(batch['image']).any()}"
+                    assert not torch.isfinite(l), f"Loss in validation batch {i} for epoch {e} is NaN, terminating. \n The corresponding loaded image batch may contain NaN: {torch.isnan(batch['image']).any()}"
                     loss_history.add_val(l)
             
             ## scheduling
