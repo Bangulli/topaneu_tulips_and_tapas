@@ -1,5 +1,5 @@
 from torch.optim import Adam
-from torch.optim.lr_scheduler import CosineAnnealingLR, CosineAnnealingWarmRestarts
+from torch.optim.lr_scheduler import CosineAnnealingLR, CosineAnnealingWarmRestarts, SequentialLR, LambdaLR
 from torch.nn.functional import cross_entropy, binary_cross_entropy, softmax
 from pathlib import Path
 import os, tqdm, torch, numpy as np, shutil, datetime, json
@@ -71,7 +71,7 @@ class BasicTrainer():
             f.write(f"Train Transforms: {train_dl.dataset.transforms}\n")
             f.write(f"Val Transforms: {val_dl.dataset.transforms}\n")
         
-    def train(self, model, train_dl, val_dl, epochs=1, early_stop=5, wdir=Path(datetime.datetime.now().strftime(r'TnTS2_training_from-%H:%M:%S-%d.%m.%y')), loss=None, use_aneu_class_balancing = False, restarts=None):
+    def train(self, model, train_dl, val_dl, epochs=1, early_stop=5, warmup=5, wdir=Path(datetime.datetime.now().strftime(r'TnTS2_training_from-%H:%M:%S-%d.%m.%y')), loss=None, use_aneu_class_balancing = False, restarts=None):
         os.makedirs(wdir)
         self.wdir=wdir
         self._save_train_cfg(model, train_dl, val_dl, epochs, early_stop, wdir, use_aneu_class_balancing)
@@ -81,7 +81,15 @@ class BasicTrainer():
             ac_weights = None
         model.to(self.device)
         self.optim = self.optim(model.parameters(), self.lr)
-        self.sched = self.sched(self.optim, epochs if restarts is None else restarts)
+        if warmup is not None:
+            # Source - https://stackoverflow.com/a/79518578
+            # Posted by Mark Loyman
+            # Retrieved 2026-11-09, License - CC BY-SA 4.0
+            warmupLR = LambdaLR(self.optim, lr_lambda=lambda step: min((step + 1) / warmup, 1.0))
+            self.sched = SequentialLR(self.optim, schedulers=[warmupLR, self.sched(self.optim, epochs if restarts is None else restarts)], milestones=[warmup])
+
+        else:
+            self.sched = self.sched(self.optim, epochs if restarts is None else restarts)
         self._init_wandb(model, train_dl, val_dl, epochs, early_stop, wdir, use_aneu_class_balancing, loss)
         loss_history = LossHistory(len(train_dl), len(val_dl))
         
@@ -159,7 +167,7 @@ class BasicTrainer():
         preds = []
         gts = []
         ids = []
-        with torch.no_grad(), torch.autocast(self.device, next(model.parameters()).dtype), torch.inference_mode():
+        with torch.no_grad(), torch.autocast(self.device, self.prec), torch.inference_mode():
             for batch in tqdm.tqdm(test_dl, desc='Testing batches'):
                 ids += batch['id']
                 pred_lat, pred_loc = model.classify(batch['image'].to(self.device), batch['coords'].to(self.device), batch['modality'], target=target)
