@@ -88,14 +88,12 @@ class TnTS2(nn.Module):
     def from_pretrained(pth):
         pth = pl.Path(pth)
         model = TnTS2(*TnTS2.get_cfg_from_pretrained(pth))
-        model.parent=pth
-        model.bb.load_state_dict(torch.load(pth/'bb.pth'))
-        model.location_vessel.load_state_dict(torch.load(pth/'location.pth'))
-        model.laterality.load_state_dict(torch.load(pth/'laterality.pth'))
+        model.load(pth)
         return model
     
     @staticmethod
     def get_cfg_from_pretrained(pth):
+        pth = pl.Path(pth)
         with open(pth/'cfg.json', 'r') as f:
                     cfg = json.load(f)
                     patchsize_mm = cfg['PATCH_SIZE_MM']
@@ -200,14 +198,12 @@ class TnTS2_ViT(nn.Module):
     def from_pretrained(pth):
         pth = pl.Path(pth)
         model = TnTS2_ViT(*TnTS2_ViT.get_cfg_from_pretrained(pth))
-        model.parent=pth
-        model.bb.load_state_dict(torch.load(pth/'bb.pth'))
-        model.location_vessel.load_state_dict(torch.load(pth/'location.pth'))
-        model.laterality.load_state_dict(torch.load(pth/'laterality.pth'))
+        model.load(pth)
         return model
     
     @staticmethod
     def get_cfg_from_pretrained(pth):
+        pth = pl.Path(pth)
         with open(pth/'cfg.json', 'r') as f:
                     cfg = json.load(f)
                     patchsize_mm = cfg['PATCH_SIZE_MM']
